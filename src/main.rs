@@ -595,7 +595,10 @@ fn main() -> std::io::Result<()> {
           Statement::Definition(names, expr) => {
             if let Some((func_name, args)) = names.split_first() {
               result.push_str(&format!("\n{}:", func_name));
-              let dep = depth(expr) + 2;
+              let mut dep = depth(expr) + 2;
+              if dep % 2 == 1 {
+                dep += 1;
+              }
               result.push_str(&format!("\n  sub rsp, {}", dep * 8));
               let mut v_args = HashMap::new();
               for (idx, arg) in args.iter().enumerate() {
@@ -617,7 +620,10 @@ fn main() -> std::io::Result<()> {
       }
       match &expr {
         Statement::Expression(e) => {
-          let dep = depth(e) + 2;
+          let mut dep = depth(e) + 2;
+          if dep % 2 == 1 {
+            dep += 1;
+          }
           result.push_str(&format!("\nour_code_starts_here:"));
           result.push_str(&format!("\nsub rsp, {}", dep * 8));
           result.push_str(&compile(e, &HashMap::new(), &func_table, &mut label, dep));
