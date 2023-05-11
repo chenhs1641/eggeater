@@ -449,7 +449,13 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
         v.push(Instr::Push(Val::Reg(Reg::RDI)));
         v.push(Instr::IMov(Val::Reg(Reg::RDI), Val::Reg(Reg::RAX)));
         v.push(Instr::Push(Val::Reg(Reg::RAX)));
+        if dep % 16 != 0 {
+          v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm(8)));
+        }
         v.push(Instr::Call(Label::LName("snek_print".to_string())));
+        if dep % 16 != 0 {
+          v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm(8)));
+        }
         v.push(Instr::Pop(Val::Reg(Reg::RAX)));
         v.push(Instr::Pop(Val::Reg(Reg::RDI)));
       } else {
@@ -461,11 +467,21 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
             v.push(Instr::IMov(Val::RegOnset(Reg::RSP, 8), Val::Reg(Reg::RDI)));
             for (idx, arg) in args.iter().rev().enumerate() {
               v.extend(compile_to_instrs(arg, si, env, v_args, func_table, l, -1, dep));
-              v.push(Instr::IMov(Val::RegOnset(Reg::RSP, (idx * 8 + 16) as i64), Val::Reg(Reg::RAX)));
+              let mut onset = (idx * 8 + 16) as i64;
+              if (dep + args.len() * 8 + 8) % 16 != 0 {
+                onset += 8;
+              }
+              v.push(Instr::IMov(Val::RegOnset(Reg::RSP, onset), Val::Reg(Reg::RAX)));
+            }
+            if (dep + args.len() * 8 + 8) % 16 != 0 {
+              v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm(8)));
             }
             v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm((args.len() * 8 + 8) as i64)));
             v.push(Instr::Call(Label::LName(func_name.to_string())));
             v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm((args.len() * 8 + 8) as i64)));
+            if (dep + args.len() * 8 + 8) % 16 != 0 {
+              v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm(8)));
+            }
             v.push(Instr::IMov(Val::Reg(Reg::RDI), Val::RegOnset(Reg::RSP, 8)));
           },
           None => panic!("Invalid : No such function"),
@@ -595,10 +611,7 @@ fn main() -> std::io::Result<()> {
           Statement::Definition(names, expr) => {
             if let Some((func_name, args)) = names.split_first() {
               result.push_str(&format!("\n{}:", func_name));
-              let mut dep = depth(expr) + 2;
-              if dep % 2 == 1 {
-                dep += 1;
-              }
+              let dep = depth(expr) + 2;
               result.push_str(&format!("\n  sub rsp, {}", dep * 8));
               let mut v_args = HashMap::new();
               for (idx, arg) in args.iter().enumerate() {
@@ -620,10 +633,7 @@ fn main() -> std::io::Result<()> {
       }
       match &expr {
         Statement::Expression(e) => {
-          let mut dep = depth(e) + 2;
-          if dep % 2 == 1 {
-            dep += 1;
-          }
+          let dep = depth(e) + 2;
           result.push_str(&format!("\nour_code_starts_here:"));
           result.push_str(&format!("\nsub rsp, {}", dep * 8));
           result.push_str(&compile(e, &HashMap::new(), &func_table, &mut label, dep));
