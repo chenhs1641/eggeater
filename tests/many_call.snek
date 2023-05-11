@@ -1,0 +1,2 @@
+(fun (name x) x)
+(name (name (name (name input))))

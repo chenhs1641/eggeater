@@ -225,7 +225,7 @@ fn parse_prog(s: &Sexp, func_table: &mut HashMap<String, usize>) -> Vec<Statemen
   }
 }
 
-fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &HashMap<String, usize>, func_table: &HashMap<String, usize>, l: &mut i64, bl: i64, dep: usize) -> Vec<Instr> {
+fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &HashMap<String, usize>, func_table: &HashMap<String, usize>, l: &mut i64, bl: i64, dep: usize, is_defn: bool) -> Vec<Instr> {
   let mut v = Vec::<Instr>::new();
   match e {
     Expr::Number(n) => {
@@ -236,9 +236,14 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
     },
     Expr::TRUE => v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3))),
     Expr::FALSE => v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(1))),
-    Expr::INPUT => v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Reg(Reg::RDI))),
+    Expr::INPUT => {
+      if is_defn {
+        panic!("Input in defn!");
+      }
+      v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Reg(Reg::RDI)))
+    },
     Expr::UnOp(op, subexpr) => {
-      v.extend(compile_to_instrs(subexpr, si, env, v_args, func_table, l, bl, dep));
+      v.extend(compile_to_instrs(subexpr, si, env, v_args, func_table, l, bl, dep, is_defn));
       match op {
         Op1::Add1 => {
           v.push(Instr::Test(Val::Reg(Reg::RAX), Val::Imm(1)));
@@ -275,7 +280,7 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
       }
     },
     Expr::BinOp(op, subexpr1, subexpr2) => {
-      v.extend(compile_to_instrs(subexpr2, si, env, v_args, func_table, l, bl, dep));
+      v.extend(compile_to_instrs(subexpr2, si, env, v_args, func_table, l, bl, dep, is_defn));
       // check if rax is num (exp2)
       match op {
         Op2::Eq => {},
@@ -285,7 +290,7 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
         },
       }
       v.push(Instr::IMov(Val::RegOffset(Reg::RSP, si * 8), Val::Reg(Reg::RAX)));
-      v.extend(compile_to_instrs(subexpr1, si + 1, env, v_args, func_table, l, bl, dep));
+      v.extend(compile_to_instrs(subexpr1, si + 1, env, v_args, func_table, l, bl, dep, is_defn));
       // check if rax is num (exp1)
       match op {
         Op2::Eq => {
@@ -376,12 +381,12 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
         if nenv.contains_key(x) && !env.contains_key(x) {
           panic!("Duplicate binding");
         }
-        v.extend(compile_to_instrs(e, nsi, &nenv, v_args, func_table, l, bl, dep));
+        v.extend(compile_to_instrs(e, nsi, &nenv, v_args, func_table, l, bl, dep, is_defn));
         nenv = nenv.update(x.to_string(), nsi * 8);
         v.push(Instr::IMov(Val::RegOffset(Reg::RSP, nsi * 8), Val::Reg(Reg::RAX)));
         nsi += 1;
       };
-      v.extend(compile_to_instrs(body, nsi, &nenv, v_args, func_table, l, bl, dep));
+      v.extend(compile_to_instrs(body, nsi, &nenv, v_args, func_table, l, bl, dep, is_defn));
     },
     Expr::Id(s) => {
       if s == "let" || s == "add1" || s == "sub1" || s == "true" || s == "false" || s == "set!" || s == "loop" || s == "break" || s == "if" || s == "block" {
@@ -402,15 +407,15 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
       if !env.contains_key(s) {
         panic!("Unbound variable identifier {}", s);
       }
-      v.extend(compile_to_instrs(e, si, env, v_args, func_table, l, bl, dep));
+      v.extend(compile_to_instrs(e, si, env, v_args, func_table, l, bl, dep, is_defn));
       v.push(Instr::IMov(Val::RegOffset(Reg::RSP, *env.get(s).unwrap()), Val::Reg(Reg::RAX)));
     },
     Expr::If(e1, e2, e3) => {
-      v.extend(compile_to_instrs(e1, si, env, v_args, func_table, l, bl, dep));
+      v.extend(compile_to_instrs(e1, si, env, v_args, func_table, l, bl, dep, is_defn));
       // v.push(Instr::Test(Val::Reg(Reg::RAX), Val::Imm(1)));
       // v.push(Instr::Je(Label::TYPEERROR)); // if not bool, jump to err
-      let v2 = compile_to_instrs(e2, si, env, v_args, func_table, l, bl, dep);
-      let v3 = compile_to_instrs(e3, si, env, v_args, func_table, l, bl, dep);
+      let v2 = compile_to_instrs(e2, si, env, v_args, func_table, l, bl, dep, is_defn);
+      let v3 = compile_to_instrs(e3, si, env, v_args, func_table, l, bl, dep, is_defn);
       v.push(Instr::Cmp(Val::Reg(Reg::RAX), Val::Imm(1)));
       v.push(Instr::Je(Label::LName(format!("label{}", *l)))); // if false, jmp to else
       v.extend(v2);
@@ -422,14 +427,14 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
     },
     Expr::Block(blk) => {
       for b in blk {
-          v.extend(compile_to_instrs(b, si, env, v_args, func_table, l, bl, dep)); 
+          v.extend(compile_to_instrs(b, si, env, v_args, func_table, l, bl, dep, is_defn)); 
       }
     },
     Expr::Loop(body) => {
       let curr_l = *l;
       *l += 2;
       v.push(Instr::Nothing(Label::LName(format!("label{}", curr_l))));
-      v.extend(compile_to_instrs(body, si, env, v_args, func_table, l, curr_l + 1, dep));
+      v.extend(compile_to_instrs(body, si, env, v_args, func_table, l, curr_l + 1, dep, is_defn));
       v.push(Instr::Jmp(Label::LName(format!("label{}", curr_l))));
       v.push(Instr::Nothing(Label::LName(format!("label{}", curr_l + 1))));
     },
@@ -437,7 +442,7 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
       if bl == -1 {
         panic!("break");
       }
-      v.extend(compile_to_instrs(body, si, env, v_args, func_table, l, bl, dep));
+      v.extend(compile_to_instrs(body, si, env, v_args, func_table, l, bl, dep, is_defn));
       v.push(Instr::Jmp(Label::LName(format!("label{}", bl))));
     },
     Expr::Funccall(func_name, args) => {
@@ -445,7 +450,7 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
         if args.len() != 1 {
           panic!("Invalid : func arg num incorrect (print)");
         }
-        v.extend(compile_to_instrs(&args[0], si, env, v_args, func_table, l, -1, dep));
+        v.extend(compile_to_instrs(&args[0], si, env, v_args, func_table, l, -1, dep, is_defn));
         v.push(Instr::Push(Val::Reg(Reg::RDI)));
         v.push(Instr::IMov(Val::Reg(Reg::RDI), Val::Reg(Reg::RAX)));
         v.push(Instr::Push(Val::Reg(Reg::RAX)));
@@ -466,7 +471,7 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
             }
             v.push(Instr::IMov(Val::RegOnset(Reg::RSP, 8), Val::Reg(Reg::RDI)));
             for (idx, arg) in args.iter().rev().enumerate() {
-              v.extend(compile_to_instrs(arg, si, env, v_args, func_table, l, -1, dep));
+              v.extend(compile_to_instrs(arg, si, env, v_args, func_table, l, -1, dep, is_defn));
               let mut onset = (idx * 8 + 16) as i64;
               if (dep * 8 + args.len() * 8 + 8) % 16 != 0 {
                 onset += 8;
@@ -538,9 +543,9 @@ fn label_to_str(label: &Label) -> String {
   }
 }
 
-fn compile(e: &Expr, v_args: &HashMap<String, usize>, func_table: &HashMap<String, usize>, label: &mut i64, dep: usize) -> String {
+fn compile(e: &Expr, v_args: &HashMap<String, usize>, func_table: &HashMap<String, usize>, label: &mut i64, dep: usize, is_defn: bool) -> String {
   let mut s = String::new();
-  let v = compile_to_instrs(e, 0, &HashMap::new(), v_args, func_table, label, -1, dep);
+  let v = compile_to_instrs(e, 0, &HashMap::new(), v_args, func_table, label, -1, dep, is_defn);
   for i in v {
     s.push_str(&instr_to_str(&i));
   }
@@ -626,7 +631,7 @@ fn main() -> std::io::Result<()> {
                 }
                 v_args.insert(arg.to_string(), idx);
               }
-              result.push_str(&compile(expr, &v_args, &func_table, &mut label, dep));
+              result.push_str(&compile(expr, &v_args, &func_table, &mut label, dep, true));
               result.push_str(&format!("\n  add rsp, {}", dep * 8));
               result.push_str(&format!("\n  ret"));
             }
@@ -642,7 +647,7 @@ fn main() -> std::io::Result<()> {
           }
           result.push_str(&format!("\nour_code_starts_here:"));
           result.push_str(&format!("\nsub rsp, {}", dep * 8));
-          result.push_str(&compile(e, &HashMap::new(), &func_table, &mut label, dep));
+          result.push_str(&compile(e, &HashMap::new(), &func_table, &mut label, dep, false));
           result.push_str(&format!("\nadd rsp, {}", dep * 8));
           result.push_str(&format!("\n  ret"));
         },
