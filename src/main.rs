@@ -473,18 +473,18 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
             for (idx, arg) in args.iter().rev().enumerate() {
               v.extend(compile_to_instrs(arg, si, env, v_args, func_table, l, -1, dep, is_defn));
               let mut onset = (idx * 8 + 16) as i64;
-              if (dep * 8 + args.len() * 8 + 8) % 16 != 0 {
+              if (dep * 8 + args.len() * 8 + 8) % 16 == 0 {
                 onset += 8;
               }
               v.push(Instr::IMov(Val::RegOnset(Reg::RSP, onset), Val::Reg(Reg::RAX)));
             }
-            if (dep * 8 + args.len() * 8 + 8) % 16 != 0 {
+            if (dep * 8 + args.len() * 8 + 8) % 16 == 0 {
               v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm(8)));
             }
             v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm((args.len() * 8 + 8) as i64)));
             v.push(Instr::Call(Label::LName(func_name.to_string())));
             v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm((args.len() * 8 + 8) as i64)));
-            if (dep * 8 + args.len() * 8 + 8) % 16 != 0 {
+            if (dep * 8 + args.len() * 8 + 8) % 16 == 0 {
               v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm(8)));
             }
             v.push(Instr::IMov(Val::Reg(Reg::RDI), Val::RegOnset(Reg::RSP, 8)));
@@ -617,7 +617,7 @@ fn main() -> std::io::Result<()> {
             if let Some((func_name, args)) = names.split_first() {
               result.push_str(&format!("\n{}:", func_name));
               let mut dep = depth(expr) + 2;
-              if dep % 2 == 0 { // is not main func, should sub 16n + 8 
+              if dep % 2 != 0 {
                 dep += 1;
               }
               result.push_str(&format!("\n  sub rsp, {}", dep * 8));
