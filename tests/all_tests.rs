@@ -3,6 +3,16 @@ mod infra;
 // Your tests go here!
 success_tests! {
     {
+        name: basic,
+        file: "basic.snek",
+        expected: "4",
+    },
+    {
+        name: no_use_func,
+        file: "no_use_func.snek",
+        expected: "4",
+    },
+    {
         name: fact,
         file: "fact.snek",
         input: "10",
@@ -22,7 +32,13 @@ success_tests! {
     }
 }
 
-runtime_error_tests! {}
+runtime_error_tests! {
+    {
+        name: type_error,
+        file: "type_error.snek",
+        expected: "invalid argument",
+    }
+}
 
 static_error_tests! {
     {
