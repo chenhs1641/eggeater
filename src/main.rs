@@ -617,7 +617,7 @@ fn main() -> std::io::Result<()> {
             if let Some((func_name, args)) = names.split_first() {
               result.push_str(&format!("\n{}:", func_name));
               let mut dep = depth(expr) + 2;
-              if dep % 2 != 0 {
+              if dep % 2 == 0 { // is not main func, should sub 16n + 8 
                 dep += 1;
               }
               result.push_str(&format!("\n  sub rsp, {}", dep * 8));
