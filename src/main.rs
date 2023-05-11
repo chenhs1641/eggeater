@@ -454,11 +454,11 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
         v.push(Instr::Push(Val::Reg(Reg::RDI)));
         v.push(Instr::IMov(Val::Reg(Reg::RDI), Val::Reg(Reg::RAX)));
         v.push(Instr::Push(Val::Reg(Reg::RAX)));
-        if dep % 2 != 0 {
+        if dep % 2 == 0 {
           v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm(8)));
         }
         v.push(Instr::Call(Label::LName("snek_print".to_string())));
-        if dep % 2 != 0 {
+        if dep % 2 == 0 {
           v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm(8)));
         }
         v.push(Instr::Pop(Val::Reg(Reg::RAX)));
