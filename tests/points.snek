@@ -1,0 +1,7 @@
+(fun (point x y) (tuple x y))
+(fun (takex pnt) (index pnt 1))
+(fun (takey pnt) (index pnt 2))
+(fun (add2 pnt1 pnt2) (point (+ (takex pnt1) (takex pnt2)) (+ (takey pnt1) (takey pnt2))))
+(let ((a (point 2 3)) (b (point 4 5)) (c (point 6 7))) (
+    block (print (add2 a b)) (print (add2 b c)) (add2 a c)
+))

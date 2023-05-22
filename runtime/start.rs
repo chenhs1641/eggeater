@@ -10,14 +10,16 @@ extern "C" {
 }
 
 #[export_name = "\x01snek_error"]
-pub extern "C" fn snek_error(errcode: i64) {
+pub extern "C" fn snek_error(errcode: i64, code2: i64) {
     // TODO: print error message according to writeup
     if errcode == 1 {
         eprintln!("invalid argument");
     } else if errcode == 2 {
         eprintln!("overflow");
     } else if errcode == 3 {
-        eprintln!("index out of bound");
+        eprintln!("index out of bound, {}", code2);
+    } else if errcode == 4 {
+        eprintln!("try to index of nil");
     } else {
         eprintln!("an error ocurred {errcode}");
     }
@@ -27,7 +29,10 @@ pub extern "C" fn snek_error(errcode: i64) {
 fn parse_input(input: &str) -> i64 {
     // TODO: parse the input string into internal value representation
     // 0
-    if input == "false" {
+    if input == "nil" {
+        1
+    }
+    else if input == "false" {
         3
     }
     else if input == "true" {
@@ -58,6 +63,8 @@ fn sn_print(i:i64) {
         print!("true");
     } else if i == 3 {
         print!("false");
+    } else if i == 1 {
+        print!("nil");
     } else if i & 3 == 1 {
         print!{"(tuple"};
         let addr: *const u64 = (i - 1) as *const u64;

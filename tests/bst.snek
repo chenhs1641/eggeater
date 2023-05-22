@@ -1,0 +1,20 @@
+(fun (value bst) (index bst 1))
+(fun (left bst) (index bst 2))
+(fun (right bst) (index bst 3))
+(fun (node le ri el) (tuple le ri el))
+(fun (insert bst elt) (
+    if (= bst nil) (
+        node elt nil nil
+    ) (
+        if (> elt (value bst)) (
+            node (value bst) (left bst) (insert (right bst) elt)
+        ) (
+            if (< elt (value bst)) (
+                node (value bst) (insert (left bst) elt) (right bst)
+            ) bst
+        )
+    )
+))
+(let ((bst (tuple 4 (tuple 2 (tuple 1 nil nil) (tuple 3 nil nil)) (tuple 6 (tuple 5 nil nil) (tuple 7 nil nil))))) (
+    block (print (insert bst 0)) (print (insert bst 8))
+))

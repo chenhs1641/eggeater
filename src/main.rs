@@ -21,6 +21,7 @@ enum Label {
   TYPEERROR,
   OVERFLOW,
   OUTBOUNDERROR,
+  NILREF,
   LName(String),
 }
 
@@ -30,6 +31,7 @@ enum Reg {
   RBX,
   RSP,
   RDI,
+  RSI,
   RFIFTHTEEN,
 }
 
@@ -82,6 +84,7 @@ enum Op2 {
 #[derive(Debug)]
 enum Expr {
   Number(i64),
+  NIL,
   TRUE,
   FALSE,
   INPUT,
@@ -120,6 +123,7 @@ fn parse_bind(s: &Sexp) -> (String, Expr) {
 fn parse_expr(s: &Sexp) -> Expr {
   match s {
     Sexp::Atom(I(n)) => Expr::Number(i64::try_from(*n).unwrap()),
+    Sexp::Atom(S(keyword)) if keyword == "nil" => Expr::NIL,
     Sexp::Atom(S(keyword)) if keyword == "true" => Expr::TRUE,
     Sexp::Atom(S(keyword)) if keyword == "false" => Expr::FALSE,
     Sexp::Atom(S(keyword)) if keyword == "input" => Expr::INPUT,
@@ -249,6 +253,7 @@ fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_
       }
       v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm((*n) * 2)));
     },
+    Expr::NIL => v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(1))),
     Expr::TRUE => v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(7))),
     Expr::FALSE => v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3))),
     Expr::INPUT => {
@@ -487,6 +492,7 @@ fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_
       v.push(Instr::Jne(Label::TYPEERROR));
       // check if e2 > 0
       v.push(Instr::Cmp(Val::Reg(Reg::RAX), Val::Imm(0)));
+      v.push(Instr::IMov(Val::Reg(Reg::RSI), Val::Reg(Reg::RAX)));
       v.push(Instr::Jle(Label::OUTBOUNDERROR));
       v.push(Instr::IMov(Val::RegOffset(Reg::RSP, si * 8), Val::Reg(Reg::RAX)));
       
@@ -497,11 +503,16 @@ fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_
       v.push(Instr::Cmp(Val::Reg(Reg::RBX), Val::Imm(1)));
       v.push(Instr::Jne(Label::TYPEERROR));
 
+      // check if rax is nil (e1)
+      v.push(Instr::Cmp(Val::Reg(Reg::RAX), Val::Imm(1)));
+      v.push(Instr::Je(Label::NILREF));
+
       v.push(Instr::IMov(Val::Reg(Reg::RBX), Val::RegOnset(Reg::RAX, 1)));
-      // check if e2 < RBX (size)
+      // check if e2 <= RBX (size)
       v.push(Instr::Sal(Val::Reg(Reg::RBX), Val::Imm(1)));
       v.push(Instr::Cmp(Val::Reg(Reg::RBX), Val::RegOffset(Reg::RSP, si * 8)));
-      v.push(Instr::Jle(Label::OUTBOUNDERROR));
+      v.push(Instr::IMov(Val::Reg(Reg::RSI), Val::RegOffset(Reg::RSP, si * 8)));
+      v.push(Instr::Jl(Label::OUTBOUNDERROR));
 
       v.push(Instr::IMov(Val::Reg(Reg::RBX), Val::RegOffset(Reg::RSP, si * 8))); // move e2 into rbx
       v.push(Instr::Sal(Val::Reg(Reg::RBX), Val::Imm(2)));
@@ -554,7 +565,7 @@ fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_
             }
             v.push(Instr::IMov(Val::Reg(Reg::RDI), Val::RegOnset(Reg::RSP, ons + 8)));
           },
-          None => panic!("Invalid : No such function"),
+          None => panic!("Invalid : No such function {}, {}", func_name, args.len()),
         }
       }
     },
@@ -596,6 +607,7 @@ fn val_to_str(val: &Val) -> String {
     Val::Reg(Reg::RBX) => format!("rbx"),
     Val::Reg(Reg::RSP) => format!("rsp"),
     Val::Reg(Reg::RDI) => format!("rdi"),
+    Val::Reg(Reg::RSI) => format!("rsi"),
     Val::Reg(Reg::RFIFTHTEEN) => format!("r15"),
     Val::RegOffset(Reg::RSP, offset) => format!("[rsp + {}]", offset),
     Val::RegOnset(Reg::RSP, onset) => format!("[rsp - {}]", onset),
@@ -611,6 +623,7 @@ fn label_to_str(label: &Label) -> String {
     Label::TYPEERROR => format!("TYPEERROR"),
     Label::OVERFLOW => format!("OVERFLOW"),
     Label::OUTBOUNDERROR => format!("OUTBOUNDERROR"),
+    Label::NILREF => format!("NILREF"),
     Label::LName(st) => st.to_string(),
   }
 }
@@ -626,7 +639,7 @@ fn compile(e: &Expr, v_args: &HashMap<String, usize>, func_table: &HashMap<Strin
 
 fn depth(e: &Expr) -> usize {
   match e {
-    Expr::Number(_) | Expr::TRUE | Expr::FALSE | Expr::INPUT | Expr::Id(_)=> 0,
+    Expr::Number(_) | Expr::NIL | Expr::TRUE | Expr::FALSE | Expr::INPUT | Expr::Id(_)=> 0,
     Expr::Let(vec, e1) => {
       let mut ma = 0;
       for (idx, (x, e)) in vec.iter().enumerate() {
@@ -753,6 +766,10 @@ OVERFLOW:
   call snek_error
 OUTBOUNDERROR:
   mov rdi, 3
+  push rsp
+  call snek_error
+NILREF:
+  mov rdi, 4
   push rsp
   call snek_error
 ",
