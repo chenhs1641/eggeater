@@ -457,12 +457,18 @@ fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_
       v.push(Instr::Jmp(Label::LName(format!("label{}", bl))));
     },
     Expr::Tuple(es) => {
+      for (idx, e) in es.iter().enumerate() {
+        let onset = ons + ((idx * 8 + 8) as i64);
+        v.extend(compile_to_instrs(e, si, onset, env, v_args, func_table, l, -1, dep, is_defn));
+        v.push(Instr::IMov(Val::RegOnset(Reg::RSP, onset), Val::Reg(Reg::RAX)));
+      }
       let len_tp = es.len();
       v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(len_tp as i64)));
       v.push(Instr::IMov(Val::RegSet(Reg::RFIFTHTEEN), Val::Reg(Reg::RAX)));
-      for e in es {
+      for (idx, e) in es.iter().enumerate() {
+        let onset = ons + ((idx * 8 + 8) as i64);
         v.push(Instr::IAdd(Val::Reg(Reg::RFIFTHTEEN), Val::Imm(8)));
-        v.extend(compile_to_instrs(e, si, ons, env, v_args, func_table, l, -1, dep, is_defn));
+        v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::RegOnset(Reg::RSP, onset)));
         v.push(Instr::IMov(Val::RegSet(Reg::RFIFTHTEEN), Val::Reg(Reg::RAX)));
       }
       v.push(Instr::IAdd(Val::Reg(Reg::RFIFTHTEEN), Val::Imm(8)));
@@ -475,18 +481,20 @@ fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_
           panic!("Invalid : func arg num incorrect (print)");
         }
         v.extend(compile_to_instrs(&args[0], si, ons, env, v_args, func_table, l, -1, dep, is_defn));
-        v.push(Instr::Push(Val::Reg(Reg::RDI)));
+        v.push(Instr::IMov(Val::RegOnset(Reg::RSP, ons + 8), Val::Reg(Reg::RDI)));
         v.push(Instr::IMov(Val::Reg(Reg::RDI), Val::Reg(Reg::RAX)));
-        v.push(Instr::Push(Val::Reg(Reg::RAX)));
-        if dep % 2 == 0 {
+        v.push(Instr::IMov(Val::RegOnset(Reg::RSP, ons + 16), Val::Reg(Reg::RAX)));
+        if (dep * 8 + 16 + ons as usize) % 16 == 0 {
           v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm(8)));
         }
+        v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm(ons + 16)));
         v.push(Instr::Call(Label::LName("snek_print".to_string())));
-        if dep % 2 == 0 {
+        v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm(ons + 16)));
+        if (dep * 8 + 16 + ons as usize) % 16 == 0 {
           v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm(8)));
         }
-        v.push(Instr::Pop(Val::Reg(Reg::RAX)));
-        v.push(Instr::Pop(Val::Reg(Reg::RDI)));
+        v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::RegOnset(Reg::RSP, ons + 16)));
+        v.push(Instr::IMov(Val::Reg(Reg::RDI), Val::RegOnset(Reg::RSP, ons + 8)));
       } else {
         match func_table.get(func_name) {
           Some(count) => {
@@ -496,19 +504,19 @@ fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_
             v.push(Instr::IMov(Val::RegOnset(Reg::RSP, ons + 8), Val::Reg(Reg::RDI)));
             for (idx, arg) in args.iter().rev().enumerate() {
               let mut onset = ons + ((idx * 8 + 16) as i64);
-              if (dep * 8 + args.len() * 8 + 8) % 16 == 0 {
+              if (dep * 8 + ons as usize + args.len() * 8 + 8) % 16 == 0 {
                 onset += 8;
               }
               v.extend(compile_to_instrs(arg, si, onset, env, v_args, func_table, l, -1, dep, is_defn));
               v.push(Instr::IMov(Val::RegOnset(Reg::RSP, onset), Val::Reg(Reg::RAX)));
             }
-            if (dep * 8 + args.len() * 8 + 8) % 16 == 0 {
+            if (dep * 8 + ons as usize + args.len() * 8 + 8) % 16 == 0 {
               v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm(8)));
             }
             v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm(ons + (args.len() * 8 + 8) as i64)));
             v.push(Instr::Call(Label::LName(func_name.to_string())));
             v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm(ons + (args.len() * 8 + 8) as i64)));
-            if (dep * 8 + args.len() * 8 + 8) % 16 == 0 {
+            if (dep * 8 + ons as usize + args.len() * 8 + 8) % 16 == 0 {
               v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm(8)));
             }
             v.push(Instr::IMov(Val::Reg(Reg::RDI), Val::RegOnset(Reg::RSP, ons + 8)));
