@@ -1,0 +1,4 @@
+(fun (plus x y)
+    (+ x y)
+)
+(plus (plus 2 3) (plus 4 5))

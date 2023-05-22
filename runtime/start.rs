@@ -6,7 +6,7 @@ extern "C" {
     // it does not add an underscore in front of the name.
     // Courtesy of Max New (https://maxsnew.com/teaching/eecs-483-fa22/hw_adder_assignment.html)
     #[link_name = "\x01our_code_starts_here"]
-    fn our_code_starts_here(input: i64) -> i64;
+    fn our_code_starts_here(input: i64, r15: *mut u64) -> i64;
 }
 
 #[export_name = "\x01snek_error"]
@@ -26,10 +26,10 @@ fn parse_input(input: &str) -> i64 {
     // TODO: parse the input string into internal value representation
     // 0
     if input == "false" {
-        1
+        3
     }
     else if input == "true" {
-        3
+        7
     }
     else {
         let num = match input.parse::<i64>() {
@@ -45,12 +45,28 @@ fn parse_input(input: &str) -> i64 {
 
 #[export_name = "\x01snek_print"]
 fn print_value(i:i64) {
+    sn_print(i);
+    println!();
+}
+
+fn sn_print(i:i64) {
     if i % 2 == 0 {
-        println!("{}", i / 2);
+        print!("{}", i / 2);
+    } else if i == 7 {
+        print!("true");
     } else if i == 3 {
-        println!("true");
-    } else if i == 1 {
-        println!("false");
+        print!("false");
+    } else if i & 3 == 1 {
+        print!{"(tuple"};
+        let addr: *const u64 = (i - 1) as *const u64;
+        let len_tp = unsafe{ *addr };
+        // println!("{}", i - 1);
+        // println!("{}", len_tp);
+        for j in 1..=len_tp {
+            print!(" ");
+            sn_print(unsafe{ *addr.offset(j as isize)} as i64);
+        }
+        print!{")"}
     } else {
         println!("Unknown:{}", i);
     }
@@ -60,7 +76,9 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let input = if args.len() == 2 { &args[1] } else { "false" };
     let input = parse_input(&input);
-
-    let i: i64 = unsafe { our_code_starts_here(input) };
+    let mut memory = Vec::<u64>::with_capacity(100000);
+    let buffer: *mut u64 = memory.as_mut_ptr();
+    // println!("{}", buffer as u64);
+    let i: i64 = unsafe { our_code_starts_here(input, buffer) };
     print_value(i);
 }

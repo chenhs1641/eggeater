@@ -13,6 +13,7 @@ enum Val {
   Imm(i64),
   RegOnset(Reg, i64),
   RegOffset(Reg, i64),
+  RegSet(Reg),
 }
 
 #[derive(Debug)]
@@ -28,6 +29,7 @@ enum Reg {
   RBX,
   RSP,
   RDI,
+  RFIFTHTEEN,
 }
 
 #[derive(Debug)]
@@ -89,6 +91,7 @@ enum Expr {
   Block(Vec<Expr>),
   Loop(Box<Expr>),
   Break(Box<Expr>),
+  Tuple(Vec<Expr>),
   Funccall(String, Vec<Expr>),
 }
 
@@ -155,13 +158,20 @@ fn parse_expr(s: &Sexp) -> Expr {
           }
           Expr::Let(vec, Box::new(parse_expr(e)))
         },
+        [Sexp::Atom(S(tuple)), es @ ..] if tuple == "tuple" => {
+          let mut vec = Vec::new();
+          for e in es {
+            vec.push(parse_expr(e));
+          }
+          Expr::Tuple(vec)
+        },
         [Sexp::Atom(S(func_name)), es @ ..] => {
           let mut vec = Vec::new();
           for e in es {
             vec.push(parse_expr(e));
           }
           Expr::Funccall(func_name.to_string(), vec)
-        }
+        },
         _ => panic!("Invalid"),
       }
     },
@@ -225,7 +235,7 @@ fn parse_prog(s: &Sexp, func_table: &mut HashMap<String, usize>) -> Vec<Statemen
   }
 }
 
-fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &HashMap<String, usize>, func_table: &HashMap<String, usize>, l: &mut i64, bl: i64, dep: usize, is_defn: bool) -> Vec<Instr> {
+fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_args: &HashMap<String, usize>, func_table: &HashMap<String, usize>, l: &mut i64, bl: i64, dep: usize, is_defn: bool) -> Vec<Instr> {
   let mut v = Vec::<Instr>::new();
   match e {
     Expr::Number(n) => {
@@ -234,8 +244,8 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
       }
       v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm((*n) * 2)));
     },
-    Expr::TRUE => v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3))),
-    Expr::FALSE => v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(1))),
+    Expr::TRUE => v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(7))),
+    Expr::FALSE => v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3))),
     Expr::INPUT => {
       if is_defn {
         panic!("Input in defn!");
@@ -243,7 +253,7 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
       v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Reg(Reg::RDI)))
     },
     Expr::UnOp(op, subexpr) => {
-      v.extend(compile_to_instrs(subexpr, si, env, v_args, func_table, l, bl, dep, is_defn));
+      v.extend(compile_to_instrs(subexpr, si, ons, env, v_args, func_table, l, bl, dep, is_defn));
       match op {
         Op1::Add1 => {
           v.push(Instr::Test(Val::Reg(Reg::RAX), Val::Imm(1)));
@@ -260,27 +270,27 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
         Op1::IsNum => {
           v.push(Instr::Test(Val::Reg(Reg::RAX), Val::Imm(1)));
           v.push(Instr::Jne(Label::LName(format!("label{}", *l)))); // is not num, return false
-          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
+          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(7)));
           v.push(Instr::Jmp(Label::LName(format!("label{}", *l + 1)))); // is num, jmp out
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l))));
-          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(1)));
+          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l + 1))));
           *l += 2;
         },
         Op1::IsBool => {
           v.push(Instr::Test(Val::Reg(Reg::RAX), Val::Imm(1)));
           v.push(Instr::Jne(Label::LName(format!("label{}", *l)))); // is num, return false
-          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(1)));
+          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
           v.push(Instr::Jmp(Label::LName(format!("label{}", *l + 1)))); // is not num, jmp out
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l))));
-          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
+          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(7)));
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l + 1))));
           *l += 2;
         },
       }
     },
     Expr::BinOp(op, subexpr1, subexpr2) => {
-      v.extend(compile_to_instrs(subexpr2, si, env, v_args, func_table, l, bl, dep, is_defn));
+      v.extend(compile_to_instrs(subexpr2, si, ons, env, v_args, func_table, l, bl, dep, is_defn));
       // check if rax is num (exp2)
       match op {
         Op2::Eq => {},
@@ -290,7 +300,7 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
         },
       }
       v.push(Instr::IMov(Val::RegOffset(Reg::RSP, si * 8), Val::Reg(Reg::RAX)));
-      v.extend(compile_to_instrs(subexpr1, si + 1, env, v_args, func_table, l, bl, dep, is_defn));
+      v.extend(compile_to_instrs(subexpr1, si + 1, ons, env, v_args, func_table, l, bl, dep, is_defn));
       // check if rax is num (exp1)
       match op {
         Op2::Eq => {
@@ -298,6 +308,7 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
           v.push(Instr::Xor(Val::Reg(Reg::RBX), Val::Reg(Reg::RAX)));
           v.push(Instr::Xor(Val::Reg(Reg::RBX), Val::RegOffset(Reg::RSP, si * 8)));
           v.push(Instr::Test(Val::Reg(Reg::RBX), Val::Imm(1)));
+          // todo: what if cmp eq with tuple and bool?
           v.push(Instr::Jne(Label::TYPEERROR));
         },
         _ => {
@@ -322,50 +333,50 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
         Op2::Lt => {
           v.push(Instr::Cmp(Val::Reg(Reg::RAX), Val::RegOffset(Reg::RSP, si * 8)));
           v.push(Instr::Jl(Label::LName(format!("label{}", *l)))); // greater, return true
-          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(1)));
+          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
           v.push(Instr::Jmp(Label::LName(format!("label{}", *l + 1)))); // is not greater, jmp out
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l))));
-          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
+          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(7)));
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l + 1))));
           *l += 2;
         },
         Op2::Gt => {
           v.push(Instr::Cmp(Val::Reg(Reg::RAX), Val::RegOffset(Reg::RSP, si * 8)));
           v.push(Instr::Jg(Label::LName(format!("label{}", *l)))); // smaller, return true
-          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(1)));
+          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
           v.push(Instr::Jmp(Label::LName(format!("label{}", *l + 1)))); // is not smaller, jmp out
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l))));
-          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
+          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(7)));
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l + 1))));
           *l += 2;
         },
         Op2::Ge => {
           v.push(Instr::Cmp(Val::Reg(Reg::RAX), Val::RegOffset(Reg::RSP, si * 8)));
           v.push(Instr::Jge(Label::LName(format!("label{}", *l)))); // smaller equal, return true
-          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(1)));
+          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
           v.push(Instr::Jmp(Label::LName(format!("label{}", *l + 1)))); // is not smaller equal, jmp out
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l))));
-          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
+          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(7)));
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l + 1))));
           *l += 2;
         },
         Op2::Le => {
           v.push(Instr::Cmp(Val::Reg(Reg::RAX), Val::RegOffset(Reg::RSP, si * 8)));
           v.push(Instr::Jle(Label::LName(format!("label{}", *l)))); // greater equal, return true
-          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(1)));
+          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
           v.push(Instr::Jmp(Label::LName(format!("label{}", *l + 1)))); // is not greater equal, jmp out
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l))));
-          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
+          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(7)));
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l + 1))));
           *l += 2;
         },
         Op2::Eq => {
           v.push(Instr::Cmp(Val::Reg(Reg::RAX), Val::RegOffset(Reg::RSP, si * 8)));
           v.push(Instr::Je(Label::LName(format!("label{}", *l)))); // equal, return true
-          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(1)));
+          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
           v.push(Instr::Jmp(Label::LName(format!("label{}", *l + 1)))); // is not equal, jmp out
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l))));
-          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(3)));
+          v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(7)));
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l + 1))));
           *l += 2;
         },
@@ -381,12 +392,12 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
         if nenv.contains_key(x) && !env.contains_key(x) {
           panic!("Duplicate binding");
         }
-        v.extend(compile_to_instrs(e, nsi, &nenv, v_args, func_table, l, bl, dep, is_defn));
+        v.extend(compile_to_instrs(e, nsi, ons, &nenv, v_args, func_table, l, bl, dep, is_defn));
         nenv = nenv.update(x.to_string(), nsi * 8);
         v.push(Instr::IMov(Val::RegOffset(Reg::RSP, nsi * 8), Val::Reg(Reg::RAX)));
         nsi += 1;
       };
-      v.extend(compile_to_instrs(body, nsi, &nenv, v_args, func_table, l, bl, dep, is_defn));
+      v.extend(compile_to_instrs(body, nsi, ons, &nenv, v_args, func_table, l, bl, dep, is_defn));
     },
     Expr::Id(s) => {
       if s == "let" || s == "add1" || s == "sub1" || s == "true" || s == "false" || s == "set!" || s == "loop" || s == "break" || s == "if" || s == "block" {
@@ -407,16 +418,16 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
       if !env.contains_key(s) {
         panic!("Unbound variable identifier {}", s);
       }
-      v.extend(compile_to_instrs(e, si, env, v_args, func_table, l, bl, dep, is_defn));
+      v.extend(compile_to_instrs(e, si, ons, env, v_args, func_table, l, bl, dep, is_defn));
       v.push(Instr::IMov(Val::RegOffset(Reg::RSP, *env.get(s).unwrap()), Val::Reg(Reg::RAX)));
     },
     Expr::If(e1, e2, e3) => {
-      v.extend(compile_to_instrs(e1, si, env, v_args, func_table, l, bl, dep, is_defn));
+      v.extend(compile_to_instrs(e1, si, ons, env, v_args, func_table, l, bl, dep, is_defn));
       // v.push(Instr::Test(Val::Reg(Reg::RAX), Val::Imm(1)));
       // v.push(Instr::Je(Label::TYPEERROR)); // if not bool, jump to err
-      let v2 = compile_to_instrs(e2, si, env, v_args, func_table, l, bl, dep, is_defn);
-      let v3 = compile_to_instrs(e3, si, env, v_args, func_table, l, bl, dep, is_defn);
-      v.push(Instr::Cmp(Val::Reg(Reg::RAX), Val::Imm(1)));
+      let v2 = compile_to_instrs(e2, si, ons, env, v_args, func_table, l, bl, dep, is_defn);
+      let v3 = compile_to_instrs(e3, si, ons, env, v_args, func_table, l, bl, dep, is_defn);
+      v.push(Instr::Cmp(Val::Reg(Reg::RAX), Val::Imm(3)));
       v.push(Instr::Je(Label::LName(format!("label{}", *l)))); // if false, jmp to else
       v.extend(v2);
       v.push(Instr::Jmp(Label::LName(format!("label{}", *l + 1)))); // jmp to endif
@@ -427,14 +438,14 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
     },
     Expr::Block(blk) => {
       for b in blk {
-          v.extend(compile_to_instrs(b, si, env, v_args, func_table, l, bl, dep, is_defn)); 
+          v.extend(compile_to_instrs(b, si, ons, env, v_args, func_table, l, bl, dep, is_defn)); 
       }
     },
     Expr::Loop(body) => {
       let curr_l = *l;
       *l += 2;
       v.push(Instr::Nothing(Label::LName(format!("label{}", curr_l))));
-      v.extend(compile_to_instrs(body, si, env, v_args, func_table, l, curr_l + 1, dep, is_defn));
+      v.extend(compile_to_instrs(body, si, ons, env, v_args, func_table, l, curr_l + 1, dep, is_defn));
       v.push(Instr::Jmp(Label::LName(format!("label{}", curr_l))));
       v.push(Instr::Nothing(Label::LName(format!("label{}", curr_l + 1))));
     },
@@ -442,15 +453,28 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
       if bl == -1 {
         panic!("break");
       }
-      v.extend(compile_to_instrs(body, si, env, v_args, func_table, l, bl, dep, is_defn));
+      v.extend(compile_to_instrs(body, si, ons, env, v_args, func_table, l, bl, dep, is_defn));
       v.push(Instr::Jmp(Label::LName(format!("label{}", bl))));
+    },
+    Expr::Tuple(es) => {
+      let len_tp = es.len();
+      v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Imm(len_tp as i64)));
+      v.push(Instr::IMov(Val::RegSet(Reg::RFIFTHTEEN), Val::Reg(Reg::RAX)));
+      for e in es {
+        v.push(Instr::IAdd(Val::Reg(Reg::RFIFTHTEEN), Val::Imm(8)));
+        v.extend(compile_to_instrs(e, si, ons, env, v_args, func_table, l, -1, dep, is_defn));
+        v.push(Instr::IMov(Val::RegSet(Reg::RFIFTHTEEN), Val::Reg(Reg::RAX)));
+      }
+      v.push(Instr::IAdd(Val::Reg(Reg::RFIFTHTEEN), Val::Imm(8)));
+      v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Reg(Reg::RFIFTHTEEN)));
+      v.push(Instr::ISub(Val::Reg(Reg::RAX), Val::Imm((8 * (len_tp + 1) - 1) as i64)))
     },
     Expr::Funccall(func_name, args) => {
       if func_name == "print" {
         if args.len() != 1 {
           panic!("Invalid : func arg num incorrect (print)");
         }
-        v.extend(compile_to_instrs(&args[0], si, env, v_args, func_table, l, -1, dep, is_defn));
+        v.extend(compile_to_instrs(&args[0], si, ons, env, v_args, func_table, l, -1, dep, is_defn));
         v.push(Instr::Push(Val::Reg(Reg::RDI)));
         v.push(Instr::IMov(Val::Reg(Reg::RDI), Val::Reg(Reg::RAX)));
         v.push(Instr::Push(Val::Reg(Reg::RAX)));
@@ -469,25 +493,25 @@ fn compile_to_instrs(e: &Expr, si: i64, env: &HashMap<String, i64>, v_args: &Has
             if args.len() != *count {
               panic!("Invalid : func arg num incorrect");
             }
-            v.push(Instr::IMov(Val::RegOnset(Reg::RSP, 8), Val::Reg(Reg::RDI)));
+            v.push(Instr::IMov(Val::RegOnset(Reg::RSP, ons + 8), Val::Reg(Reg::RDI)));
             for (idx, arg) in args.iter().rev().enumerate() {
-              v.extend(compile_to_instrs(arg, si, env, v_args, func_table, l, -1, dep, is_defn));
-              let mut onset = (idx * 8 + 16) as i64;
+              let mut onset = ons + ((idx * 8 + 16) as i64);
               if (dep * 8 + args.len() * 8 + 8) % 16 == 0 {
                 onset += 8;
               }
+              v.extend(compile_to_instrs(arg, si, onset, env, v_args, func_table, l, -1, dep, is_defn));
               v.push(Instr::IMov(Val::RegOnset(Reg::RSP, onset), Val::Reg(Reg::RAX)));
             }
             if (dep * 8 + args.len() * 8 + 8) % 16 == 0 {
               v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm(8)));
             }
-            v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm((args.len() * 8 + 8) as i64)));
+            v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm(ons + (args.len() * 8 + 8) as i64)));
             v.push(Instr::Call(Label::LName(func_name.to_string())));
-            v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm((args.len() * 8 + 8) as i64)));
+            v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm(ons + (args.len() * 8 + 8) as i64)));
             if (dep * 8 + args.len() * 8 + 8) % 16 == 0 {
               v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm(8)));
             }
-            v.push(Instr::IMov(Val::Reg(Reg::RDI), Val::RegOnset(Reg::RSP, 8)));
+            v.push(Instr::IMov(Val::Reg(Reg::RDI), Val::RegOnset(Reg::RSP, ons + 8)));
           },
           None => panic!("Invalid : No such function"),
         }
@@ -529,8 +553,10 @@ fn val_to_str(val: &Val) -> String {
     Val::Reg(Reg::RBX) => format!("rbx"),
     Val::Reg(Reg::RSP) => format!("rsp"),
     Val::Reg(Reg::RDI) => format!("rdi"),
+    Val::Reg(Reg::RFIFTHTEEN) => format!("r15"),
     Val::RegOffset(Reg::RSP, offset) => format!("[rsp + {}]", offset),
     Val::RegOnset(Reg::RSP, onset) => format!("[rsp - {}]", onset),
+    Val::RegSet(Reg::RFIFTHTEEN) => format!("[r15]"),
     _ => panic!("cannot convert val to str"),
   }
 }
@@ -545,7 +571,7 @@ fn label_to_str(label: &Label) -> String {
 
 fn compile(e: &Expr, v_args: &HashMap<String, usize>, func_table: &HashMap<String, usize>, label: &mut i64, dep: usize, is_defn: bool) -> String {
   let mut s = String::new();
-  let v = compile_to_instrs(e, 0, &HashMap::new(), v_args, func_table, label, -1, dep, is_defn);
+  let v = compile_to_instrs(e, 0, 0, &HashMap::new(), v_args, func_table, label, -1, dep, is_defn);
   for i in v {
     s.push_str(&instr_to_str(&i));
   }
@@ -576,6 +602,13 @@ fn depth(e: &Expr) -> usize {
     },
     Expr::Loop(e1) => depth(e1),
     Expr::Break(e1) => depth(e1),
+    Expr::Tuple(vec) => {
+      let mut ma = 0;
+      for e in vec {
+        ma = ma.max(depth(e));
+      }
+      ma
+    },
     Expr::Funccall(id, vec) => {
       let mut ma = 0;
       for e in vec {
@@ -647,6 +680,7 @@ fn main() -> std::io::Result<()> {
           }
           result.push_str(&format!("\nour_code_starts_here:"));
           result.push_str(&format!("\nsub rsp, {}", dep * 8));
+          result.push_str(&format!("\nmov r15, rsi"));
           result.push_str(&compile(e, &HashMap::new(), &func_table, &mut label, dep, false));
           result.push_str(&format!("\nadd rsp, {}", dep * 8));
           result.push_str(&format!("\n  ret"));
