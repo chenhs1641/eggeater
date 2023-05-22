@@ -16,6 +16,8 @@ pub extern "C" fn snek_error(errcode: i64) {
         eprintln!("invalid argument");
     } else if errcode == 2 {
         eprintln!("overflow");
+    } else if errcode == 3 {
+        eprintln!("index out of bound");
     } else {
         eprintln!("an error ocurred {errcode}");
     }

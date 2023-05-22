@@ -20,6 +20,7 @@ enum Val {
 enum Label {
   TYPEERROR,
   OVERFLOW,
+  OUTBOUNDERROR,
   LName(String),
 }
 
@@ -40,7 +41,9 @@ enum Instr {
   IMul(Val, Val),
   Test(Val, Val),
   Cmp(Val, Val),
+  Sal(Val, Val),
   Sar(Val, Val),
+  And(Val, Val),
   Xor(Val, Val),
   Push(Val),
   Pop(Val),
@@ -92,6 +95,7 @@ enum Expr {
   Loop(Box<Expr>),
   Break(Box<Expr>),
   Tuple(Vec<Expr>),
+  Index(Box<Expr>, Box<Expr>),
   Funccall(String, Vec<Expr>),
 }
 
@@ -165,6 +169,7 @@ fn parse_expr(s: &Sexp) -> Expr {
           }
           Expr::Tuple(vec)
         },
+        [Sexp::Atom(S(index)), e1, e2] if index == "index" => Expr::Index(Box::new(parse_expr(e1)), Box::new(parse_expr(e2))),
         [Sexp::Atom(S(func_name)), es @ ..] => {
           let mut vec = Vec::new();
           for e in es {
@@ -475,6 +480,34 @@ fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_
       v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Reg(Reg::RFIFTHTEEN)));
       v.push(Instr::ISub(Val::Reg(Reg::RAX), Val::Imm((8 * (len_tp + 1) - 1) as i64)))
     },
+    Expr::Index(e1, e2) => {
+      v.extend(compile_to_instrs(e2, si, ons, env, v_args, func_table, l, -1, dep, is_defn));
+      // check if rax is num (e2)
+      v.push(Instr::Test(Val::Reg(Reg::RAX), Val::Imm(1)));
+      v.push(Instr::Jne(Label::TYPEERROR));
+      // check if e2 > 0
+      v.push(Instr::Cmp(Val::Reg(Reg::RAX), Val::Imm(0)));
+      v.push(Instr::Jle(Label::OUTBOUNDERROR));
+      v.push(Instr::IMov(Val::RegOffset(Reg::RSP, si * 8), Val::Reg(Reg::RAX)));
+      
+      v.extend(compile_to_instrs(e1, si + 1, ons, env, v_args, func_table, l, -1, dep, is_defn));
+      // check if rax is heap-alloc (e1)
+      v.push(Instr::IMov(Val::Reg(Reg::RBX), Val::Imm(3)));
+      v.push(Instr::And(Val::Reg(Reg::RBX), Val::Reg(Reg::RAX)));
+      v.push(Instr::Cmp(Val::Reg(Reg::RBX), Val::Imm(1)));
+      v.push(Instr::Jne(Label::TYPEERROR));
+
+      v.push(Instr::IMov(Val::Reg(Reg::RBX), Val::RegOnset(Reg::RAX, 1)));
+      // check if e2 < RBX (size)
+      v.push(Instr::Sal(Val::Reg(Reg::RBX), Val::Imm(1)));
+      v.push(Instr::Cmp(Val::Reg(Reg::RBX), Val::RegOffset(Reg::RSP, si * 8)));
+      v.push(Instr::Jle(Label::OUTBOUNDERROR));
+
+      v.push(Instr::IMov(Val::Reg(Reg::RBX), Val::RegOffset(Reg::RSP, si * 8))); // move e2 into rbx
+      v.push(Instr::Sal(Val::Reg(Reg::RBX), Val::Imm(2)));
+      v.push(Instr::IAdd(Val::Reg(Reg::RAX), Val::Reg(Reg::RBX)));
+      v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::RegOnset(Reg::RAX, 1)));
+    },
     Expr::Funccall(func_name, args) => {
       if func_name == "print" {
         if args.len() != 1 {
@@ -537,7 +570,9 @@ fn instr_to_str(instr: &Instr) -> String {
     Instr::IMul(v1, v2) => format!("\nimul {}, {}", val_to_str(v1), val_to_str(v2)),
     Instr::Test(v1, v2) => format!("\ntest {}, {}", val_to_str(v1), val_to_str(v2)),
     Instr::Cmp(v1, v2) => format!("\ncmp {}, {}", val_to_str(v1), val_to_str(v2)),
+    Instr::Sal(v1, v2) => format!("\nsal {}, {}", val_to_str(v1), val_to_str(v2)),
     Instr::Sar(v1, v2) => format!("\nsar {}, {}", val_to_str(v1), val_to_str(v2)),
+    Instr::And(v1, v2) => format!("\nand {}, {}", val_to_str(v1), val_to_str(v2)),
     Instr::Xor(v1, v2) => format!("\nxor {}, {}", val_to_str(v1), val_to_str(v2)),
     Instr::Push(v1) => format!("\npush {}", val_to_str(v1)),
     Instr::Pop(v1) => format!("\npop {}", val_to_str(v1)),
@@ -565,6 +600,8 @@ fn val_to_str(val: &Val) -> String {
     Val::RegOffset(Reg::RSP, offset) => format!("[rsp + {}]", offset),
     Val::RegOnset(Reg::RSP, onset) => format!("[rsp - {}]", onset),
     Val::RegSet(Reg::RFIFTHTEEN) => format!("[r15]"),
+    Val::RegOffset(Reg::RAX, offset) => format!("[rax + {}]", offset),
+    Val::RegOnset(Reg::RAX, onset) => format!("[rax - {}]", onset),
     _ => panic!("cannot convert val to str"),
   }
 }
@@ -573,6 +610,7 @@ fn label_to_str(label: &Label) -> String {
   match label {
     Label::TYPEERROR => format!("TYPEERROR"),
     Label::OVERFLOW => format!("OVERFLOW"),
+    Label::OUTBOUNDERROR => format!("OUTBOUNDERROR"),
     Label::LName(st) => st.to_string(),
   }
 }
@@ -617,6 +655,7 @@ fn depth(e: &Expr) -> usize {
       }
       ma
     },
+    Expr::Index(e1, e2) => (depth(e1) + 1).max(depth(e2)),
     Expr::Funccall(id, vec) => {
       let mut ma = 0;
       for e in vec {
@@ -710,6 +749,10 @@ TYPEERROR:
   call snek_error
 OVERFLOW:
   mov rdi, 2
+  push rsp
+  call snek_error
+OUTBOUNDERROR:
+  mov rdi, 3
   push rsp
   call snek_error
 ",
