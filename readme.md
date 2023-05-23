@@ -2,14 +2,14 @@
 
 ## 1. Concrete Syntax
 
-The concrete syntax of Egg Eater has added `tuple` and `index` expressions from the past Diamondback.
+The concrete syntax of Egg Eater has added `nil` value, `tuple` and `index` expressions from the past Diamondback.
 
 ```
 <prog> := <defn>* <expr>
 <defn> := (fun (<name> <name>*) <expr>)
 <expr> :=
   | <number>
-  | nil (new)
+  | nil                            (new)
   | true
   | false
   | input
@@ -23,8 +23,8 @@ The concrete syntax of Egg Eater has added `tuple` and `index` expressions from 
   | (loop <expr>)
   | (break <expr>)
   | (<name> <expr>*)
-  | (tuple <expr>+) (new)
-  | (index <expr> <expr>) (new)
+  | (tuple <expr>+)                (new)
+  | (index <expr> <expr>)          (new)
 
 
 <op1> := add1 | sub1 | isnum | isbool | print
@@ -226,6 +226,20 @@ false
 
 ## 5. Comparison with TWO Other Programming Languages
 
+### 5.1. Tuples in Python
+In Python, tuples are immutable sequences, meaning their elements cannot be modified once created. When a tuple object is created, the Python interpreter calculates the required memory size to accommodate the tuple and allocates a contiguous block of memory on the heap. The individual elements of the tuple are allocated within the same block of memory, preserving their order. The values of the elements are assigned within the allocated memory block. After creation, a reference to the allocated memory block is returned.
+
+### 5.2. Vectors in C++
+In C++, vectors are dynamic arrays that can grow or shrink in size at runtime. When a vector is declared, the C++ compiler generates code that automatically allocates memory for the vector on the heap.Initially, the total number of elements the vector can hold without resizing (capacity) is determined based on the specified or default initial size. The vector object contains a pointer to the dynamically allocated memory block, which is initially empty. C++ allows adding new elements to a vector or removing existed elements from one, with it resized on demand efficiently.
+
+### 5.3. Comparison with Tuples in the Egg Eater Language
+
+Since the tuples cannot be changed after creation, they are more like tuples in Python than vectors in C++. Also, the heap memory allocated to tuples will not change after their allocation, which also makes them more like tuples in Python.
+
 ## 6. References
 
-[How to insert into a BST without modifying existed data structure.](https://edstem.org/us/courses/38748/discussion/3125816)
+[How to Insert into a BST without Modifying Existed Data Structure](https://edstem.org/us/courses/38748/discussion/3125816)
+
+[Memory Allocation of Vectors in C++](https://stackoverflow.com/questions/10366474/where-does-a-stdvector-allocate-its-memory)
+
+[Memory Allocation of Tuples in Python](https://www.opensourceforu.com/2021/05/memory-management-in-lists-and-tuples/)
