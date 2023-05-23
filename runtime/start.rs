@@ -17,7 +17,7 @@ pub extern "C" fn snek_error(errcode: i64, code2: i64) {
     } else if errcode == 2 {
         eprintln!("overflow");
     } else if errcode == 3 {
-        eprintln!("index out of bound, {}", code2);
+        eprintln!("index out of bound, {}", code2 / 2);
     } else if errcode == 4 {
         eprintln!("try to index of nil");
     } else {

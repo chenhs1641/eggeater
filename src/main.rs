@@ -46,6 +46,7 @@ enum Instr {
   Sal(Val, Val),
   Sar(Val, Val),
   And(Val, Val),
+  Or(Val, Val),
   Xor(Val, Val),
   Push(Val),
   Pop(Val),
@@ -314,12 +315,16 @@ fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_
       // check if rax is num (exp1)
       match op {
         Op2::Eq => {
-          v.push(Instr::IMov(Val::Reg(Reg::RBX), Val::Imm(0)));
-          v.push(Instr::Xor(Val::Reg(Reg::RBX), Val::Reg(Reg::RAX)));
+          v.push(Instr::IMov(Val::Reg(Reg::RBX), Val::Reg(Reg::RAX)));
           v.push(Instr::Xor(Val::Reg(Reg::RBX), Val::RegOffset(Reg::RSP, si * 8)));
           v.push(Instr::Test(Val::Reg(Reg::RBX), Val::Imm(1)));
-          // todo: what if cmp eq with tuple and bool?
           v.push(Instr::Jne(Label::TYPEERROR));
+          v.push(Instr::Test(Val::Reg(Reg::RAX), Val::Imm(1)));
+          v.push(Instr::Je(Label::LName(format!("label{}", *l))));
+          v.push(Instr::Test(Val::Reg(Reg::RBX), Val::Imm(2)));
+          v.push(Instr::Jne(Label::TYPEERROR));
+          v.push(Instr::Nothing(Label::LName(format!("label{}", *l))));
+          *l += 1;
         },
         _ => {
           v.push(Instr::Test(Val::Reg(Reg::RAX), Val::Imm(1)));
@@ -448,7 +453,7 @@ fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_
     },
     Expr::Block(blk) => {
       for b in blk {
-          v.extend(compile_to_instrs(b, si, ons, env, v_args, func_table, l, bl, dep, is_defn)); 
+        v.extend(compile_to_instrs(b, si, ons, env, v_args, func_table, l, bl, dep, is_defn)); 
       }
     },
     Expr::Loop(body) => {
@@ -584,6 +589,7 @@ fn instr_to_str(instr: &Instr) -> String {
     Instr::Sal(v1, v2) => format!("\nsal {}, {}", val_to_str(v1), val_to_str(v2)),
     Instr::Sar(v1, v2) => format!("\nsar {}, {}", val_to_str(v1), val_to_str(v2)),
     Instr::And(v1, v2) => format!("\nand {}, {}", val_to_str(v1), val_to_str(v2)),
+    Instr::Or(v1, v2) => format!("\nor {}, {}", val_to_str(v1), val_to_str(v2)),
     Instr::Xor(v1, v2) => format!("\nxor {}, {}", val_to_str(v1), val_to_str(v2)),
     Instr::Push(v1) => format!("\npush {}", val_to_str(v1)),
     Instr::Pop(v1) => format!("\npop {}", val_to_str(v1)),
