@@ -106,6 +106,7 @@ This is a simple example that prints two tulples (it will print the second twice
 ### 4.2. `error_tag.snek`
 
 This is an example that tries to compare between two tuples and gets an error.
+
 ```
 (< (tuple 2 3) (tuple 2))
 ```
@@ -114,6 +115,8 @@ This is an example that tries to compare between two tuples and gets an error.
 > ./tests/error_tag.run 
 invalid argument
 ```
+
+The runtime catches the error when evaluating `<` operation. It checks the type of the oprands. After finding the program tries to compare between two tuples, it jumps into the error handling code.
 
 ### 4.3. `error_bound.snek`
 
@@ -128,6 +131,8 @@ This is an example that tries to index out of bound and gets an error.
 index out of bound, 4
 ```
 
+The runtime catches the error when evaluating `index`. It compares the size of the tuple and the intended index. When discovering index out of bound, it jumps into the error handling code.
+
 ### 4.4. `error3.snek`
 
 This is an example that tries to index into a `nil` object and gets an error.
@@ -140,6 +145,8 @@ This is an example that tries to index into a `nil` object and gets an error.
 > ./tests/error3.run 
 try to index of nil
 ```
+
+The runtime catches the error when evaluating `index`. It checks whether the heap-allocated object is `nil`, if so, it jumps into the error handling code.
 
 ### 4.5. `points.snek`
 
@@ -230,7 +237,7 @@ false
 In Python, tuples are immutable sequences, meaning their elements cannot be modified once created. When a tuple object is created, the Python interpreter calculates the required memory size to accommodate the tuple and allocates a contiguous block of memory on the heap. The individual elements of the tuple are allocated within the same block of memory, preserving their order. The values of the elements are assigned within the allocated memory block. After creation, a reference to the allocated memory block is returned.
 
 ### 5.2. Vectors in C++
-In C++, vectors are dynamic arrays that can grow or shrink in size at runtime. When a vector is declared, the C++ compiler generates code that automatically allocates memory for the vector on the heap.Initially, the total number of elements the vector can hold without resizing (capacity) is determined based on the specified or default initial size. The vector object contains a pointer to the dynamically allocated memory block, which is initially empty. C++ allows adding new elements to a vector or removing existed elements from one, with it resized on demand efficiently.
+In C++, vectors are dynamic arrays that can grow or shrink in size at runtime. When a vector is declared, the C++ compiler generates code that automatically allocates memory for the vector on the heap. Initially, the total number of elements the vector can hold without resizing (capacity) is determined based on the specified or default initial size. The vector object contains a pointer to the dynamically allocated memory block, which is initially empty. C++ allows adding new elements to a vector or removing existed elements from one, with it resized on demand efficiently.
 
 ### 5.3. Comparison with Tuples in the Egg Eater Language
 
