@@ -1,0 +1,6 @@
+(let ((x (tuple 1 2 3)) (y (tuple 1 2 3)) (z (tuple 2 false 3))) (
+    block
+    (print (== x y))
+    (print (== x z))
+    (== (tuple x y) (tuple y x))
+))

@@ -80,6 +80,7 @@ enum Op2 {
   Ge,
   Le,
   Eq,
+  Eqq,
 }
 
 #[derive(Debug)]
@@ -100,6 +101,7 @@ enum Expr {
   Break(Box<Expr>),
   Tuple(Vec<Expr>),
   Index(Box<Expr>, Box<Expr>),
+  Setindex(Box<Expr>, Box<Expr>, Box<Expr>),
   Funccall(String, Vec<Expr>),
 }
 
@@ -143,6 +145,7 @@ fn parse_expr(s: &Sexp) -> Expr {
         [Sexp::Atom(S(op)), e1, e2] if op == ">=" => Expr::BinOp(Op2::Ge, Box::new(parse_expr(e1)), Box::new(parse_expr(e2))),
         [Sexp::Atom(S(op)), e1, e2] if op == "<=" => Expr::BinOp(Op2::Le, Box::new(parse_expr(e1)), Box::new(parse_expr(e2))),
         [Sexp::Atom(S(op)), e1, e2] if op == "=" => Expr::BinOp(Op2::Eq, Box::new(parse_expr(e1)), Box::new(parse_expr(e2))),
+        [Sexp::Atom(S(op)), e1, e2] if op == "==" => Expr::BinOp(Op2::Eqq, Box::new(parse_expr(e1)), Box::new(parse_expr(e2))),
         [Sexp::Atom(S(set)), Sexp::Atom(S(name)), e2] if set == "set!" => Expr::Set(name.to_string(), Box::new(parse_expr(e2))),
         [Sexp::Atom(S(if_)), e1, e2, e3] if if_ == "if" => Expr::If(Box::new(parse_expr(e1)), Box::new(parse_expr(e2)), Box::new(parse_expr(e3))),
         [Sexp::Atom(S(block)), body @ ..] if block == "block" => {
@@ -175,6 +178,7 @@ fn parse_expr(s: &Sexp) -> Expr {
           Expr::Tuple(vec)
         },
         [Sexp::Atom(S(index)), e1, e2] if index == "index" => Expr::Index(Box::new(parse_expr(e1)), Box::new(parse_expr(e2))),
+        [Sexp::Atom(S(setindex)), e1, e2, e3] if setindex == "setindex" => Expr::Setindex(Box::new(parse_expr(e1)), Box::new(parse_expr(e2)), Box::new(parse_expr(e3))),
         [Sexp::Atom(S(func_name)), es @ ..] => {
           let mut vec = Vec::new();
           for e in es {
@@ -305,6 +309,12 @@ fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_
       // check if rax is num (exp2)
       match op {
         Op2::Eq => {},
+        Op2::Eqq => { // check if rax is tag3
+          v.push(Instr::IMov(Val::Reg(Reg::RBX), Val::Reg(Reg::RAX)));
+          v.push(Instr::And(Val::Reg(Reg::RBX), Val::Imm(3)));
+          v.push(Instr::Cmp(Val::Reg(Reg::RBX), Val::Imm(1)));
+          v.push(Instr::Jne(Label::TYPEERROR));
+        }
         _ => {
           v.push(Instr::Test(Val::Reg(Reg::RAX), Val::Imm(1)));
           v.push(Instr::Jne(Label::TYPEERROR));
@@ -325,6 +335,12 @@ fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_
           v.push(Instr::Jne(Label::TYPEERROR));
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l))));
           *l += 1;
+        },
+        Op2::Eqq => {
+          v.push(Instr::IMov(Val::Reg(Reg::RBX), Val::Reg(Reg::RAX)));
+          v.push(Instr::And(Val::Reg(Reg::RBX), Val::Imm(3)));
+          v.push(Instr::Cmp(Val::Reg(Reg::RBX), Val::Imm(1)));
+          v.push(Instr::Jne(Label::TYPEERROR));
         },
         _ => {
           v.push(Instr::Test(Val::Reg(Reg::RAX), Val::Imm(1)));
@@ -395,6 +411,21 @@ fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_
           v.push(Instr::Nothing(Label::LName(format!("label{}", *l + 1))));
           *l += 2;
         },
+        Op2::Eqq => {
+          v.push(Instr::IMov(Val::RegOnset(Reg::RSP, ons + 8), Val::Reg(Reg::RDI)));
+          v.push(Instr::IMov(Val::Reg(Reg::RDI), Val::Reg(Reg::RAX)));
+          v.push(Instr::IMov(Val::Reg(Reg::RSI), Val::RegOffset(Reg::RSP, si * 8)));
+          if (dep * 8 + 8 + ons as usize) % 16 == 0 {
+            v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm(8)));
+          }
+          v.push(Instr::ISub(Val::Reg(Reg::RSP), Val::Imm(ons + 8)));
+          v.push(Instr::Call(Label::LName("snek_equal".to_string())));
+          v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm(ons + 8)));
+          if (dep * 8 + 8 + ons as usize) % 16 == 0 {
+            v.push(Instr::IAdd(Val::Reg(Reg::RSP), Val::Imm(8)));
+          }
+          v.push(Instr::IMov(Val::Reg(Reg::RDI), Val::RegOnset(Reg::RSP, ons + 8)));
+        }
       }
     },
     Expr::Let(vec, body) => {
@@ -523,6 +554,49 @@ fn compile_to_instrs(e: &Expr, si: i64, ons: i64, env: &HashMap<String, i64>, v_
       v.push(Instr::Sal(Val::Reg(Reg::RBX), Val::Imm(2)));
       v.push(Instr::IAdd(Val::Reg(Reg::RAX), Val::Reg(Reg::RBX)));
       v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::RegOnset(Reg::RAX, 1)));
+    },
+    Expr::Setindex(e1, e2, e3) => {
+
+      v.extend(compile_to_instrs(e3, si, ons, env, v_args, func_table, l, -1, dep, is_defn));
+      v.push(Instr::IMov(Val::RegOffset(Reg::RSP, si * 8), Val::Reg(Reg::RAX)));
+      
+      v.extend(compile_to_instrs(e2, si + 1, ons, env, v_args, func_table, l, -1, dep, is_defn));
+      // check if rax is num (e2)
+      v.push(Instr::Test(Val::Reg(Reg::RAX), Val::Imm(1)));
+      v.push(Instr::Jne(Label::TYPEERROR));
+      // check if e2 > 0
+      v.push(Instr::Cmp(Val::Reg(Reg::RAX), Val::Imm(0)));
+      v.push(Instr::IMov(Val::Reg(Reg::RSI), Val::Reg(Reg::RAX)));
+      v.push(Instr::Jle(Label::OUTBOUNDERROR));
+      v.push(Instr::IMov(Val::RegOffset(Reg::RSP, (si + 1) * 8), Val::Reg(Reg::RAX)));
+      
+      v.extend(compile_to_instrs(e1, si + 2, ons, env, v_args, func_table, l, -1, dep, is_defn));
+      // check if rax is heap-alloc (e1)
+      v.push(Instr::IMov(Val::Reg(Reg::RBX), Val::Imm(3)));
+      v.push(Instr::And(Val::Reg(Reg::RBX), Val::Reg(Reg::RAX)));
+      v.push(Instr::Cmp(Val::Reg(Reg::RBX), Val::Imm(1)));
+      v.push(Instr::Jne(Label::TYPEERROR));
+
+      // check if rax is nil (e1)
+      v.push(Instr::Cmp(Val::Reg(Reg::RAX), Val::Imm(1)));
+      v.push(Instr::Je(Label::NILREF));
+
+      v.push(Instr::IMov(Val::Reg(Reg::RBX), Val::RegOnset(Reg::RAX, 1)));
+      // check if e2 <= RBX (size)
+      v.push(Instr::Sal(Val::Reg(Reg::RBX), Val::Imm(1)));
+      v.push(Instr::Cmp(Val::Reg(Reg::RBX), Val::RegOffset(Reg::RSP, (si + 1) * 8)));
+      v.push(Instr::IMov(Val::Reg(Reg::RSI), Val::RegOffset(Reg::RSP, (si + 1) * 8)));
+      v.push(Instr::Jl(Label::OUTBOUNDERROR));
+
+      v.push(Instr::IMov(Val::Reg(Reg::RBX), Val::RegOffset(Reg::RSP, (si + 1) * 8))); // move e2 into rbx
+      v.push(Instr::Sal(Val::Reg(Reg::RBX), Val::Imm(2)));
+      v.push(Instr::IAdd(Val::Reg(Reg::RAX), Val::Reg(Reg::RBX)));
+
+      // move e3 into rbx
+      v.push(Instr::IMov(Val::Reg(Reg::RBX), Val::RegOffset(Reg::RSP, si * 8)));
+      v.push(Instr::IMov(Val::RegOnset(Reg::RAX, 1), Val::Reg(Reg::RBX)));
+      v.push(Instr::IMov(Val::Reg(Reg::RAX), Val::Reg(Reg::RAX)));
+
     },
     Expr::Funccall(func_name, args) => {
       if func_name == "print" {
@@ -675,6 +749,7 @@ fn depth(e: &Expr) -> usize {
       ma
     },
     Expr::Index(e1, e2) => (depth(e1) + 1).max(depth(e2)),
+    Expr::Setindex(e1, e2, e3) => (depth(e1) + 2).max(depth(e2) + 1).max(depth(e3)),
     Expr::Funccall(id, vec) => {
       let mut ma = 0;
       for e in vec {
@@ -760,6 +835,7 @@ fn main() -> std::io::Result<()> {
 section .text
 extern snek_error
 extern snek_print
+extern snek_equal
 global our_code_starts_here
   {}
 TYPEERROR:

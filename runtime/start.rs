@@ -52,11 +52,20 @@ fn parse_input(input: &str) -> i64 {
 
 #[export_name = "\x01snek_print"]
 fn print_value(i:i64) {
-    sn_print(i);
+    sn_print(i, Vec::new());
     println!();
 }
 
-fn sn_print(i:i64) {
+#[export_name = "\x01snek_equal"]
+fn equal_value(i1:i64, i2:i64) -> i64 {
+    if sn_equal(i1, i2, Vec::new(), Vec::new()) {
+        return 7;
+    } else {
+        return 3;
+    }
+}
+
+fn sn_print(i:i64, env:Vec::<i64>) {
     if i % 2 == 0 {
         print!("{}", i / 2);
     } else if i == 7 {
@@ -66,6 +75,12 @@ fn sn_print(i:i64) {
     } else if i == 1 {
         print!("nil");
     } else if i & 3 == 1 {
+        if env.contains(&i) {
+            print!("...");
+            return;
+        }
+        let mut new_env = env.clone();
+        new_env.push(i);
         print!{"(tuple"};
         let addr: *const u64 = (i - 1) as *const u64;
         let len_tp = unsafe{ *addr };
@@ -73,11 +88,47 @@ fn sn_print(i:i64) {
         // println!("{}", len_tp);
         for j in 1..=len_tp {
             print!(" ");
-            sn_print(unsafe{ *addr.offset(j as isize)} as i64);
+            sn_print(unsafe{ *addr.offset(j as isize)} as i64, new_env.clone());
         }
         print!{")"}
     } else {
         println!("Unknown:{}", i);
+    }
+}
+
+fn sn_equal(i1:i64, i2:i64, env1:Vec::<i64>, env2:Vec::<i64>) -> bool {
+    let mut new_env1 = env1.clone();
+    let mut new_env2 = env2.clone();
+    new_env1.push(i1);
+    new_env2.push(i2);
+    if i1 % 2 == 0 || i1 == 7 || i1 == 3 || i1 == 1 {
+        return i1 == i2
+    } else if i1 & 3 == 1 {
+        if i2 & 3 != 1 {
+            return false;
+        }
+        if env1.contains(&i1) && env2.contains(&i2) {
+            return true;
+        }
+        let mut new_env1 = env1.clone();
+        let mut new_env2 = env2.clone();
+        new_env1.push(i1);
+        new_env2.push(i2);
+        let addr1: *const u64 = (i1 - 1) as *const u64;
+        let addr2: *const u64 = (i2 - 1) as *const u64;
+        let len_tp1 = unsafe{ *addr1 };
+        let len_tp2 = unsafe{ *addr2 };
+        if len_tp1 != len_tp2 {
+            return false;
+        }
+        for j in 1..=len_tp1 {
+            if !sn_equal(unsafe{ *addr1.offset(j as isize)} as i64, unsafe{ *addr2.offset(j as isize)} as i64, new_env1.clone(), new_env2.clone()) {
+                return false;
+            }
+        }
+        return true;
+    } else {
+        panic!("Unknown:{}", i1);
     }
 }
 

@@ -1,0 +1,5 @@
+(let ((x (tuple 1 2 3))) (
+    block (
+        setindex x 2 x
+    ) x
+))

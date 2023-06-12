@@ -1,0 +1,13 @@
+(let ((x (tuple 1 2 3)) (y (tuple 1 2 3))) (
+    block (
+        setindex x 2 x
+    ) (
+        setindex y 2 y
+    ) (
+        print x
+    ) (
+        print y
+    ) (
+        == x y
+    )
+))

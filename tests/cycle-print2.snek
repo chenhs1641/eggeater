@@ -1,0 +1,9 @@
+(let ((x (tuple 1)) (y (tuple 2)) (z (tuple 3))) (
+    block (
+        setindex z 1 x
+    ) (
+        setindex x 1 y
+    ) (
+        setindex y 1 z
+    ) x
+))

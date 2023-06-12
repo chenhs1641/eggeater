@@ -1,0 +1,16 @@
+(let (
+    (a (tuple 1))
+    (b (tuple 2))
+    (c (tuple a))
+    (x (tuple 1))
+    (y (tuple 2))
+    (z (tuple y))
+) (block 
+    (setindex a 1 b)
+    (setindex b 1 c)
+    (setindex x 1 y)
+    (setindex y 1 z)
+    (print a)
+    (print x)
+    (== a x)
+))
